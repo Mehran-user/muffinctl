@@ -1,0 +1,164 @@
+.\" Manpage for muffinctl
+.TH MUFFINCTL 1 "2026-05-28" "1.0" "muffinctl man page"
+
+.SH NAME
+muffinctl \- wmctrl-like window and workspace control for Cinnamon on X11 and Wayland
+
+.SH SYNOPSIS
+.B muffinctl
+<command> [options]
+
+.SH DESCRIPTION
+\fBmuffinctl\fP is a command-line utility for controlling windows and workspaces in the Cinnamon desktop environment. It provides wmctrl-like functionality and works on both X11 and Wayland sessions by communicating with the muffin-window-control Cinnamon extension via D-Bus.
+
+.SH REQUIREMENTS
+The "Muffin Window Control" Cinnamon extension must be enabled. Enable it via:
+.br
+\fBcinnamon-extensions -e muffin-window-control@mehran\fP
+.br
+or through Cinnamon Settings > Extensions.
+.PP
+Project: https://github.com/Mehran-user/muffinctl
+
+.SH COMMANDS
+
+.SS "Window Control"
+.TP
+.BI "list " [-a, --all]
+List windows on the current workspace. Use \fB-a\fP or \fB--all\fP to list windows across all workspaces.
+.TP
+.BI "activate " <winId>
+Activate and focus the specified window.
+.TP
+.BI "close " <winId>
+Close the specified window.
+.TP
+.BI "minimize " <winId>
+Minimize the specified window.
+.TP
+.BI "maximize " <winId>
+Maximize the specified window.
+.TP
+.BI "unmaximize " <winId>
+Restore a maximized window to its normal size.
+.TP
+.BI "fullscreen " <winId>
+Make the specified window fullscreen.
+.TP
+.BI "unfullscreen " <winId>
+Exit fullscreen mode for the specified window.
+.TP
+.BI "shade " <winId>
+Shade (roll up) the specified window to its title bar.
+.TP
+.BI "unshade " <winId>
+Unshade a rolled-up window.
+.TP
+.BI "toggleshade " <winId>
+Toggle the shade state of the specified window.
+.TP
+.BI "raise " <winId>
+Raise the specified window above others.
+.TP
+.BI "lower " <winId>
+Lower the specified window below others.
+.TP
+.BI "move " <winId> <x> <y>
+Move the specified window to coordinates (\fIx\fP, \fIy\fP).
+.TP
+.BI "resize " <winId> <width> <height>
+Resize the specified window to \fIwidth\fP x \fIheight\fP.
+.TP
+.BI "moveresize " <winId> <x> <y> <width> <height>
+Move and resize the specified window in a single operation.
+.TP
+.BI "sticky " <winId> [on|off]
+Make the window appear on all workspaces. Defaults to \fBon\fP if no argument is given.
+.TP
+.BI "alwaysontop " <winId> [on|off]
+Set or unset the window to always stay on top. Defaults to \fBon\fP.
+.TP
+.BI "skippager " <winId> [on|off]
+Hide the window from the workspace pager. Defaults to \fBon\fP.
+.TP
+.BI "skiptaskbar " <winId> [on|off]
+Hide the window from the taskbar. Defaults to \fBon\fP.
+
+.SS "Window Search"
+.TP
+.BI "search " <pattern>
+Search for windows by title, WM_CLASS, or WM_CLASS instance. Case-insensitive.
+.TP
+.B active
+Display the currently active (focused) window's ID and title.
+
+.SS "Workspace Control"
+.TP
+.B ws-list
+List all workspaces with their names and active status.
+.TP
+.BI "ws-switch " <index>
+Switch to the workspace at the given 0-based \fIindex\fP.
+.TP
+.B ws-add
+Add a new workspace at the end of the list.
+.TP
+.BI "ws-remove " <index>
+Remove the workspace at the given \fIindex\fP.
+.TP
+.BI "ws-rename " <index> <name>
+Rename the workspace at the given \fIindex\fP.
+
+.SS "Workspace Assignment"
+.TP
+.BI "ws-move " <winId> <wsIndex>
+Move the specified window to the workspace at \fIwsIndex\fP.
+
+.SH OUTPUT FORMAT
+Window and workspace lists are displayed in tab-separated columns. The output format adapts based on available tools (\fBjq\fP, \fBpython3\fP, or plain text fallback).
+
+Window list columns: \fBwinId\fP, \fBworkspace\fP, \fBtitle\fP
+.br
+Workspace list columns: \fBWorkspace index\fP, \fBname\fP, \fBactive status\fP
+
+.SH EXAMPLES
+.TP
+List all windows across all workspaces:
+.B muffinctl list -a
+.TP
+Find Firefox windows:
+.B muffinctl search firefox
+.TP
+Activate a window by ID:
+.B muffinctl activate 123
+.TP
+Move and resize a window:
+.B muffinctl moveresize 123 100 100 800 600
+.TP
+List workspaces:
+.B muffinctl ws-list
+.TP
+Switch to workspace 1:
+.B muffinctl ws-switch 1
+.TP
+Move window 123 to workspace 2:
+.B muffinctl ws-move 123 2
+
+.SH ENVIRONMENT
+.TP
+.B DBUS_SESSION_BUS_ADDRESS
+D-Bus session bus address. Used to communicate with the Cinnamon extension.
+
+.SH NOTES
+Window IDs are stable sequence numbers assigned by Muffin/Cinnamon. They may change across sessions.
+
+.SH BUGS
+Report bugs at https://github.com/Mehran-user/muffinctl
+
+.SH AUTHOR
+mehran
+
+.SH "SEE ALSO"
+.BR wmctrl (1),
+.BR cinnamon-settings (1),
+.BR gdbus (1)

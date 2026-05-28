@@ -1,0 +1,281 @@
+#!/bin/bash
+
+# muffinctl - wmctrl-like window control for Cinnamon (X11 and Wayland)
+# Requires the muffin-window-control@mehran Cinnamon extension
+
+DBUS_NAME="org.muffin.WindowControl"
+DBUS_PATH="/org/muffin/WindowControl"
+DBUS_IFACE="org.muffin.WindowControl"
+SCRIPT_NAME=$(basename "$0")
+
+error() { echo "Error: $1" >&2; exit 1; }
+
+check_extension() {
+    gdbus call --session \
+        --dest "$DBUS_NAME" \
+        --object-path "$DBUS_PATH" \
+        --method "$DBUS_IFACE.ListWindows" \
+        false --timeout 500 > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        error "muffin-window-control extension is not enabled or not responding.\nEnable it in: Cinnamon Settings > Extensions"
+    fi
+}
+
+call_dbus() {
+    local method="$1"; shift
+    local output
+    output=$(gdbus call --session \
+        --dest "$DBUS_NAME" \
+        --object-path "$DBUS_PATH" \
+        --method "$DBUS_IFACE.$method" \
+        "$@" 2>/dev/null)
+    [ $? -eq 0 ] && echo "$output" || return 1
+}
+
+parse_out() {
+    # Strip outer parens/quotes from gdbus return values:
+    #   ('json...',)  -> json...
+    #   (true,)       -> true
+    sed "s/^('\(.*\)',)/\1/" | sed "s/^(\\(.*\\),)/\1/"
+}
+
+usage() {
+    cat << 'EOF'
+Usage: muffinctl <command> [options]
+
+Window Control:
+  list [-a]                    List windows (add -a for all workspaces)
+  activate <winId>             Focus a window
+  close <winId>                Close a window
+  minimize <winId>             Minimize
+  maximize <winId>             Maximize
+  unmaximize <winId>           Unmaximize
+  fullscreen <winId>           Fullscreen
+  unfullscreen <winId>         Exit fullscreen
+  shade <winId>                Roll up to title bar
+  unshade <winId>              Unroll
+  toggleshade <winId>          Toggle shade
+  raise <winId>                Raise window
+  lower <winId>                Lower window
+  move <winId> <x> <y>         Move to x,y
+  resize <winId> <w> <h>       Resize window
+  moveresize <winId> <x> <y> <w> <h>  Move and resize
+  sticky <winId> [on|off]      Show on all workspaces
+  alwaysontop <winId> [on|off] Always on top
+  skippager <winId> [on|off]   Hide from pager
+  skiptaskbar <winId> [on|off] Hide from taskbar
+
+Window Search:
+  search <pattern>             Search by title/class/instance
+  active                       Show active window info
+
+Workspace:
+  ws-list                      List workspaces
+  ws-switch <index>            Switch workspace (0-based)
+  ws-add                       Add workspace
+  ws-remove <index>            Remove workspace
+  ws-rename <index> <name>     Rename workspace
+  ws-move <winId> <wsIndex>    Move window to workspace
+EOF
+}
+
+format_wins() {
+    local json="$1"
+    if command -v jq &>/dev/null; then
+        echo "$json" | jq -r '.[] | [.id, .workspace, .title] | @tsv' | column -t -s $'\t'
+    elif command -v python3 &>/dev/null; then
+        echo "$json" | python3 -c "
+import sys, json
+for w in json.load(sys.stdin):
+    print(f\"{w['id']}\t{w['workspace']}\t{w['title']}\")
+" | column -t -s $'\t'
+    else
+        echo "$json"
+    fi
+}
+
+format_active() {
+    local json="$1"
+    if command -v jq &>/dev/null; then
+        echo "$json" | jq -r '[.id, .title] | @tsv'
+    elif command -v python3 &>/dev/null; then
+        echo "$json" | python3 -c "
+import sys, json
+w = json.load(sys.stdin)
+print(f\"{w['id']}\t{w['title']}\")
+"
+    else
+        echo "$json"
+    fi
+}
+
+format_ws() {
+    local json="$1"
+    if command -v jq &>/dev/null; then
+        echo "$json" | jq -r '.[] | [("Workspace " + (.index|tostring)), .name, ("active: " + (.active|tostring))] | @tsv' | column -t -s $'\t'
+    elif command -v python3 &>/dev/null; then
+        echo "$json" | python3 -c "
+import sys, json
+for ws in json.load(sys.stdin):
+    print(f\"Workspace {ws['index']}\t{ws['name']}\tactive: {ws['active']}\")
+" | column -t -s $'\t'
+    else
+        echo "$json"
+    fi
+}
+
+check_extension
+
+CMD="${1:-}"; shift 2>/dev/null
+
+case "$CMD" in
+    list)
+        [ "$1" = "-a" ] || [ "$1" = "--all" ] && arg=true || arg=false
+        output=$(call_dbus "ListWindows" "$arg")
+        [ $? -eq 0 ] && format_wins "$(echo "$output" | parse_out)" || error "list failed"
+        ;;
+    activate)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "ActivateWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "activate failed"
+        ;;
+    close)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "CloseWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "close failed"
+        ;;
+    minimize)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "MinimizeWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "minimize failed"
+        ;;
+    maximize)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "MaximizeWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "maximize failed"
+        ;;
+    unmaximize)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "UnmaximizeWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "unmaximize failed"
+        ;;
+    fullscreen)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "FullscreenWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "fullscreen failed"
+        ;;
+    unfullscreen)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "UnfullscreenWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "unfullscreen failed"
+        ;;
+    shade)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "ShadeWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "shade failed"
+        ;;
+    unshade)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "UnshadeWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "unshade failed"
+        ;;
+    toggleshade)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "ToggleShadeWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "toggleshade failed"
+        ;;
+    raise)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "RaiseWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "raise failed"
+        ;;
+    lower)
+        [ -z "$1" ] && error "winId required"
+        result=$(call_dbus "LowerWindow" "'$1'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "lower failed"
+        ;;
+    move)
+        [ -z "$3" ] && error "Usage: move <winId> <x> <y>"
+        result=$(call_dbus "MoveWindow" "'$1'" "$2" "$3")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "move failed"
+        ;;
+    resize)
+        [ -z "$3" ] && error "Usage: resize <winId> <w> <h>"
+        result=$(call_dbus "ResizeWindow" "'$1'" "$2" "$3")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "resize failed"
+        ;;
+    moveresize)
+        [ -z "$5" ] && error "Usage: moveresize <winId> <x> <y> <w> <h>"
+        result=$(call_dbus "MoveResizeWindow" "'$1'" "$2" "$3" "$4" "$5")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "moveresize failed"
+        ;;
+    sticky)
+        [ -z "$1" ] && error "winId required"
+        en=true; [ "$2" = "off" ] || [ "$2" = "false" ] || [ "$2" = "0" ] && en=false
+        result=$(call_dbus "SetWindowSticky" "'$1'" "$en")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "sticky failed"
+        ;;
+    alwaysontop)
+        [ -z "$1" ] && error "winId required"
+        en=true; [ "$2" = "off" ] || [ "$2" = "false" ] || [ "$2" = "0" ] && en=false
+        result=$(call_dbus "SetWindowAlwaysOnTop" "'$1'" "$en")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "alwaysontop failed"
+        ;;
+    skippager)
+        [ -z "$1" ] && error "winId required"
+        en=true; [ "$2" = "off" ] || [ "$2" = "false" ] || [ "$2" = "0" ] && en=false
+        result=$(call_dbus "SetWindowSkipPager" "'$1'" "$en")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "skippager failed"
+        ;;
+    skiptaskbar)
+        [ -z "$1" ] && error "winId required"
+        en=true; [ "$2" = "off" ] || [ "$2" = "false" ] || [ "$2" = "0" ] && en=false
+        result=$(call_dbus "SetWindowSkipTasklist" "'$1'" "$en")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "skiptaskbar failed"
+        ;;
+    search)
+        [ -z "$1" ] && error "pattern required"
+        output=$(call_dbus "SearchWindows" "'$1'")
+        [ $? -eq 0 ] && format_wins "$(echo "$output" | parse_out)" || error "search failed"
+        ;;
+    active)
+        output=$(call_dbus "GetActiveWindow")
+        if [ $? -eq 0 ]; then
+            v=$(echo "$output" | parse_out)
+            [ -n "$v" ] && [ "$v" != "" ] && format_active "$v" || error "no active window"
+        else
+            error "active failed"
+        fi
+        ;;
+    ws-list)
+        output=$(call_dbus "ListWorkspaces")
+        [ $? -eq 0 ] && format_ws "$(echo "$output" | parse_out)" || error "ws-list failed"
+        ;;
+    ws-switch)
+        [ -z "$1" ] && error "index required"
+        result=$(call_dbus "ChangeWorkspace" "$1")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "switch failed"
+        ;;
+    ws-add)
+        result=$(call_dbus "AddWorkspace")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "add failed"
+        ;;
+    ws-remove)
+        [ -z "$1" ] && error "index required"
+        result=$(call_dbus "RemoveWorkspace" "$1")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "remove failed"
+        ;;
+    ws-rename)
+        [ -z "$2" ] && error "Usage: ws-rename <index> <name>"
+        result=$(call_dbus "SetWorkspaceName" "$1" "'$2'")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "rename failed"
+        ;;
+    ws-move)
+        [ -z "$2" ] && error "Usage: ws-move <winId> <wsIndex>"
+        result=$(call_dbus "SetWindowWorkspace" "'$1'" "$2")
+        [ "$(echo "$result" | parse_out)" = "true" ] || error "ws-move failed"
+        ;;
+    help|--help|-h) usage ;;
+    "") usage ;;
+    *) error "Unknown: $CMD\nRun '$SCRIPT_NAME help'" ;;
+esac
